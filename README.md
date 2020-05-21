@@ -1,4 +1,6 @@
 ## Description
+Author: https://github.com/SakuraRiven/EAST
+
 This is a PyTorch Re-Implementation of [EAST: An Efficient and Accurate Scene Text Detector](http://openaccess.thecvf.com/content_cvpr_2017/papers/Zhou_EAST_An_Efficient_CVPR_2017_paper.pdf).
 
 * Only RBOX part is implemented.
