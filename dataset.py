@@ -7,6 +7,7 @@ import os
 import torch
 import torchvision.transforms as transforms
 from torch.utils import data
+import random
 
 
 def cal_distance(x1, y1, x2, y2):
@@ -211,25 +212,39 @@ def crop_img(img, vertices, labels, length):
 		new_vertices[:,[0,2,4,6]] = vertices[:,[0,2,4,6]] * ratio_w
 		new_vertices[:,[1,3,5,7]] = vertices[:,[1,3,5,7]] * ratio_h
 
-	# find random position
-	remain_h = img.height - length
-	remain_w = img.width - length
-	flag = True
-	cnt = 0
-	while flag and cnt < 1000:
-		cnt += 1
+		# find random position
+		remain_h = img.height - length
+		remain_w = img.width - length
+		flag = True
+		cnt = 0
+		while flag and cnt < 1000:
+			cnt += 1
+			start_w = int(np.random.rand() * remain_w)
+			start_h = int(np.random.rand() * remain_h)
+			flag = is_cross_text([start_w, start_h], length, new_vertices[labels==1,:])
+		box = (start_w, start_h, start_w + length, start_h + length)
+		region = img.crop(box)
+		if new_vertices.size == 0:
+			return region, new_vertices	
+		
+		new_vertices[:,[0,2,4,6]] -= start_w
+		new_vertices[:,[1,3,5,7]] -= start_h
+		return region, new_vertices
+	else:
+		# find random position
+		remain_h = img.height - length
+		remain_w = img.width - length
 		start_w = int(np.random.rand() * remain_w)
 		start_h = int(np.random.rand() * remain_h)
-		flag = is_cross_text([start_w, start_h], length, new_vertices[labels==1,:])
-	box = (start_w, start_h, start_w + length, start_h + length)
-	region = img.crop(box)
-	if new_vertices.size == 0:
-		return region, new_vertices	
-	
-	new_vertices[:,[0,2,4,6]] -= start_w
-	new_vertices[:,[1,3,5,7]] -= start_h
-	return region, new_vertices
-
+		box = (start_w, start_h, start_w + length, start_h + length)
+		region = img.crop(box)
+		if new_vertices.size == 0:
+			return region, new_vertices	
+		
+		new_vertices[:,[0,2,4,6]] -= start_w
+		new_vertices[:,[1,3,5,7]] -= start_h
+		return region, new_vertices
+		
 
 def rotate_all_pixels(rotate_mat, anchor_x, anchor_y, length):
 	'''get rotated locations of all pixels for next stages
@@ -311,21 +326,45 @@ def rotate_img_random(img, vertices):
 		img         : rotated PIL Image
 		new_vertices: rotated vertices
 	'''
-	
+	angles_op = [0,Image.ROTATE_90,Image.ROTATE_180,Image.ROTATE_270]
+	angle = random.choice([0,Image.ROTATE_90,Image.ROTATE_180,Image.ROTATE_270])
+	if angle == 0:
+		return img, vertices
+	else:
+		# 图片旋转
+		img = img.transpose(angle)
+		w = img.width
+		h = img.height
+		new_vertices = np.zeros(vertices.shape)
+		# 坐标变换
+		if angle == 2: # Image.ROTATE_90 anticlockwise
+			for i, vertice in enumerate(vertices):
+				temp_vertice = vertice
+				for k in range(0,len(temp_vertice),2):
+					old_x = temp_vertice[k]
+					temp_vertice[k] = temp_vertice[k+1]
+					temp_vertice[k+1] = w - old_x
+				new_vertices[i,:] = temp_vertice
 
-	# 图片中心点
-	center_x = (img.width - 1) / 2
-	center_y = (img.height - 1) / 2
-
-	# 随机旋转角度
-	angle = angle_range * (np.random.rand() * 2 - 1)
-	img = img.rotate(angle, Image.BILINEAR)
-
-	#计算新的顶点坐标
-	new_vertices = np.zeros(vertices.shape)
-	for i, vertice in enumerate(vertices):
-		new_vertices[i,:] = rotate_vertices(vertice, -angle / 180 * math.pi, np.array([[center_x],[center_y]]))
-	return img, new_vertices
+		elif angle == 3 : # Image.ROTATE_180
+			for i, vertice in enumerate(vertices):
+				temp_vertice = vertice
+				for k in range(0,len(temp_vertice),2):
+					old_x = temp_vertice[k]
+					old_y = temp_vertice[k+1]
+					temp_vertice[k] = w - old_x
+					temp_vertice[k+1] = h - old_y
+				new_vertices[i,:] = temp_vertice
+		else: # Image.ROTATE_270
+			for i, vertice in enumerate(vertices):
+				temp_vertice = vertice
+				for k in range(0,len(temp_vertice),2):
+					old_y = temp_vertice[k+1]
+					temp_vertice[k+1] = temp_vertice[k]
+					temp_vertice[k] = h - old_y
+				new_vertices[i,:] = temp_vertice
+		
+		return img, new_vertices
 
 
 def get_score_geo(img, vertices, labels, scale, length):
@@ -433,7 +472,8 @@ class custom_dataset(data.Dataset):
 		img = Image.open(self.img_files[index]) # 打开对应图片
 		img, vertices = adjust_height(img, vertices) # 调整高度
 		img, vertices = crop_img(img, vertices, labels, self.length) # crop图片
-		img, vertices = rotate_img(img, vertices) # 旋转角度
+
+		img, vertices = rotate_img_random(img, vertices) # 旋转角度
 		
 		transform = transforms.Compose([transforms.ColorJitter(0.5, 0.5, 0.5, 0.25), \
                                         transforms.ToTensor(), \
